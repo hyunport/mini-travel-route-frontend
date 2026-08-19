@@ -163,6 +163,8 @@ _MAP_HTML = r"""
     const places = JSON.parse(document.getElementById("places-data").textContent);
     const message = document.getElementById("message");
     const routeColors = ["#2563eb", "#16a34a", "#9333ea", "#ea580c", "#0891b2", "#be123c"];
+    const kakaoCoreFallbackVersion = "4.5.26";
+    let kakaoCoreTimer = null;
 
     function showError(text) {
       message.textContent = text;
@@ -191,12 +193,11 @@ _MAP_HTML = r"""
     }
 
     function renderMap() {
-      if (!window.kakao || !kakao.maps) {
-        showError("카카오 지도 SDK를 불러오지 못했습니다. 키와 등록 도메인을 확인해 주세요.");
+      if (!window.kakao || !kakao.maps || typeof kakao.maps.Map !== "function") {
+        showError("카카오 지도 코어가 준비되지 않았습니다.");
         return;
       }
 
-      kakao.maps.load(function () {
         const first = places[0];
         const map = new kakao.maps.Map(document.getElementById("map"), {
           center: new kakao.maps.LatLng(first.lat, first.lng),
@@ -256,13 +257,47 @@ _MAP_HTML = r"""
         } else {
           map.setBounds(bounds, 45, 45, 45, 45);
         }
-      });
+    }
+
+    function bootKakao() {
+      if (!window.kakao || !kakao.maps) {
+        showError("카카오 지도 SDK 로더를 불러오지 못했습니다.");
+        return;
+      }
+
+      if (typeof kakao.maps.Map === "function") {
+        renderMap();
+        return;
+      }
+
+      const version = kakao.maps.version || kakao.maps.VERSION || kakaoCoreFallbackVersion;
+      const core = document.createElement("script");
+      core.src = `https://t1.daumcdn.net/mapjsapi/js/main/${version}/kakao.js`;
+      core.async = true;
+
+      kakaoCoreTimer = window.setTimeout(function () {
+        showError("카카오 지도 코어 로딩 시간이 초과되었습니다.");
+      }, 8000);
+
+      core.onload = function () {
+        window.clearTimeout(kakaoCoreTimer);
+        if (typeof kakao.maps.Map !== "function") {
+          showError("카카오 지도 코어 초기화에 실패했습니다.");
+          return;
+        }
+        renderMap();
+      };
+      core.onerror = function () {
+        window.clearTimeout(kakaoCoreTimer);
+        showError("카카오 지도 코어 스크립트 로드에 실패했습니다.");
+      };
+      document.head.appendChild(core);
     }
 
     const sdk = document.createElement("script");
     sdk.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=__KAKAO_JS_KEY__&autoload=false";
     sdk.async = true;
-    sdk.onload = renderMap;
+    sdk.onload = bootKakao;
     sdk.onerror = function () {
       showError("카카오 지도 SDK 연결에 실패했습니다. 네트워크와 등록 도메인을 확인해 주세요.");
     };
